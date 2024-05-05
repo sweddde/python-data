@@ -5,7 +5,7 @@ import dask.dataframe as dd
 import seaborn as sns
 from scipy import stats
 import matplotlib.pyplot as plt
-from dask.diagnostics import ProgressBar
+
 ####################################################
 #ГЕНЕРАЦИЯ ДАТАСЕТА
 ####################################################
@@ -22,7 +22,7 @@ def generate_dataset(num_rows=1000000, pct_duplicates=0.1):
         'value': np.random.rand(num_rows) * 1000,
         'text': [''.join(np.random.choice(['z', 'x', 'c', 'a', 'w', 'g', '1', '99', '0000'], size=np.random.randint(5, 20))) for _ in range(num_rows)],
     }
-
+# Добавим дублей
     duplicate_ids = np.random.choice(data['id'], size=int(num_rows * pct_duplicates), replace=False)
     for i in duplicate_ids:
         data['text'][i] = ''.join(np.random.choice(['z', 'x', 'c', 'a', 'w', 'g', '1', '99', '0000'], size=np.random.randint(5, 20)))
@@ -64,7 +64,7 @@ def filter_dataset_parallel(df):
 
 def process_dataset_and_save_parallel():
     print("Генерация датасета и фильтрация:")
-    folder_path = save_to_folder('')
+    folder_path = save_to_folder('', folder_name='generated_files')
 
     df = generate_dataset()
     df.to_csv(os.path.join(folder_path, 'generated_dataset.csv'), index=False)
@@ -73,86 +73,91 @@ def process_dataset_and_save_parallel():
     df_filtered = filter_dataset_parallel(df)
     df_filtered.to_csv(os.path.join(folder_path, 'filtered_dataset.csv'), index=False)
     print("Датасет отфильтрован и сохранен.")
-
-# Вызов функции для создания датасета, его фильтрации и сохранения результата
-process_dataset_and_save_parallel()
-print("Генерация датасета и фильтрация завершены.")
 ####################################################
 #РАСЧЕТ МЕТРИК
 ####################################################
+
 def calculate_metrics_and_save():
-    # Чтение исходного датасета
+    # Чтение фильтрованного датасета
     df = pd.read_csv('generated_files/filtered_dataset.csv')
 
-    # Преобразование времени в часы
-    df['hour'] = pd.to_datetime(df['datetime']).dt.hour
+    # Преобразование столбца datetime в тип данных datetime
+    df['datetime'] = pd.to_datetime(df['datetime'])
 
-    # Расчет метрик: кол-во уникальных строк, среднее и медиана для числовых значений
-    metrics_df = df.groupby('hour').agg({
-        'text': 'nunique',  # Кол-во уникальных строк
-        'value': ['mean', 'median']  # Среднее и медиана для числовых значений
-    }).reset_index()
+    # Группировка данных по часам и выполнение агрегации
+    metrics_df = df.groupby(df['datetime'].dt.floor('h')).agg(
+        unique_strings=('text', 'nunique'),  # количество уникальных строк
+        average_numeric=('value', 'mean'),  # среднее значение числового столбца
+        median_numeric=('value', 'median')  # медиана числового столбца
+    )
+
+    # Создание столбца 'datetime' на основе индекса времени
+    metrics_df['datetime'] = metrics_df.index
+
+    # Установка столбца 'datetime' в качестве индекса
+    metrics_df.set_index('datetime', inplace=True)
 
     # Сохранение результатов в файл 'metrics.csv'
-    metrics_df.to_csv('generated_files/metrics.csv', index=False)
+    metrics_df.to_csv('generated_files/metrics.csv')
 
     # Вывод результата
     print('#######################\nРассчет метрик\n#######################\n', metrics_df)
+
 # SQL запрос для выполнения аналогичных расчетов в базе данных (PostgreSQL)
-sql_query = """
-SELECT 
-    EXTRACT(HOUR FROM datetime) AS hour,
-    COUNT(DISTINCT text) AS unique_strings,
-    AVG(value) AS average_numeric,
-    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY value) AS median_numeric
-FROM generated_dataset
-GROUP BY hour;
-"""
+#sql_query = """
+#SELECT
+#    DATE_TRUNC('hour', datetime) AS hour,
+#    COUNT(DISTINCT text) AS unique_strings,
+#    AVG(value) AS average_numeric,
+#    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY value) AS median_numeric
+#FROM generated_dataset
+#GROUP BY DATE_TRUNC('hour', datetime);
+#"""
 
 # Вызов функции для расчета метрик и сохранения результатов
-calculate_metrics_and_save()
 ####################################################
-#ОБЪЕДИНЕНИЕ С МЕТРИКАМИ
+# ОБЪЕДИНЕНИЕ С МЕТРИКАМИ
 ####################################################
-def merge_datasets_and_save():
-    # Чтение исходного датасета
+def calculate_metrics_and_merge():
+    # Чтение сгенерированного датасета
     df = pd.read_csv('generated_files/generated_dataset.csv')
 
-    # Чтение файла с метриками
-    metrics_df = pd.read_csv('generated_files/metrics.csv')
+    # Преобразование столбца datetime в тип данных datetime
+    df['datetime'] = pd.to_datetime(df['datetime'])
 
-    # Приведение времени к формату часов
-    df['hour'] = pd.to_datetime(df['datetime']).dt.hour
+    # Чтение метрик
+    metrics = pd.read_csv('generated_files/metrics.csv')
 
-    # Создание временной колонки для объединения данных
-    df['temp_hour'] = df['hour']
+    # Преобразование столбца datetime к типу datetime
+    metrics['datetime'] = pd.to_datetime(metrics['datetime'])
 
-    # Объединение данных по ближайшему часу
-    merged_df = df.merge(metrics_df, left_on='temp_hour', right_on='hour', how='left')
-
-    # Удаление временных колонок
-    merged_df.drop(['hour_y', 'temp_hour'], axis=1, inplace=True)
-    merged_df.rename(columns={'hour_x': 'hour'}, inplace=True)
+    # Объединение данных по ближайшему времени
+    merged_df = pd.merge_asof(df.sort_values('datetime'), metrics.sort_values('datetime'), on='datetime', direction='nearest')
 
     # Сохранение результата в файл
     merged_df.to_csv('generated_files/merged_dataset.csv', index=False)
-    print('#######################\n Мердж метрик \n#######################\n', merged_df)
-# Вызов функции для объединения данных и сохранения результата
-merge_datasets_and_save()
 
+    # Вывод результата
+    print('#######################\n Мердж метрик \n#######################\n', merged_df)
 ####################################################
-#РАССЧЕТ АНАЛИТ.МЕТРИК
+# РАССЧЕТ АНАЛИТ.МЕТРИК
 ####################################################
-def calculate_confidence_interval(input_file, output_file):
+def calculate_confidence_interval_pre(input_file, output_file, hist_output_file):
     # Чтение полного датасета
     full_df = pd.read_csv(input_file)
 
-    # Построение гистограммы для колонки 'value'
+    # Создание гистограммы
     plt.figure(figsize=(12, 6))
-    sns.histplot(full_df['value'], bins=20, kde=True)
+    sns.histplot(full_df['value'], bins=10000, kde=True)
     plt.title('Histogram of Numeric Column')
     plt.xlabel('Value')
     plt.ylabel('Frequency')
+    plt.grid(True)
+
+    # Сохранение гистограммы в файл
+    plt.savefig(hist_output_file)
+
+    # Отображение гистограммы
     plt.show()
 
     # Рассчет 95% доверительного интервала
@@ -166,17 +171,16 @@ def calculate_confidence_interval(input_file, output_file):
     margin_of_error = z_score * std_err
     confidence_interval = (mean - margin_of_error, mean + margin_of_error)
 
-
     # Запись результата в файл
     with open(output_file, 'w') as file:
         file.write(f"95% Confidence Interval: {confidence_interval}")
     print(f'Доверительный интервал: {confidence_interval}')
-
-
-# Вызов функции для расчета доверительного интервала и сохранения результата
-calculate_confidence_interval('generated_files/generated_dataset.csv', 'generated_files/confidence_interval_result.txt')
+def calculate_confidence_interval():
+    calculate_confidence_interval_pre('generated_files/generated_dataset.csv',
+                                      'generated_files/confidence_interval_result.txt',
+                                      'generated_files/histogram.png')
 ####################################################
-#ВИЗУАЛИЗАЦИЯ
+# ВИЗУАЛИЗАЦИЯ
 ####################################################
 def plot_average_numeric_value_by_month(data, output_file):
     # Преобразуем столбец 'datetime' в формат datetime
@@ -185,20 +189,24 @@ def plot_average_numeric_value_by_month(data, output_file):
     # Извлечение месяца из 'datetime'
     data['month'] = data['datetime'].dt.month
 
+    # Рассчет среднего значения числовой колонки по месяцам
+    monthly_avg = data.groupby('month')['value'].mean()
+
     # График среднего значения числовой колонки по месяцам
     plt.figure(figsize=(12, 6))
-    sns.barplot(x='month', y='value', data=data, estimator=np.mean)
+    plt.plot(monthly_avg.index, monthly_avg.values, marker='o', color='b', linestyle='-')
+    plt.xticks(range(1, 13), ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'])
     plt.title('Average Numeric Value by Month')
     plt.xlabel('Month')
     plt.ylabel('Average Numeric Value')
+    plt.grid(True)
     plt.savefig(output_file)  # Сохранение графика в файл
     plt.show()
-
 def plot_character_frequency_heatmap(data, output_file):
     # Подсчет частотности символов
     char_freq = data['text'].apply(lambda x: list(x)).explode().value_counts()
 
-    # Преобразование в Dask DataFrame для построения Heatmap
+    # Преобразование в DataFrame для построения Heatmap
     char_freq_df = char_freq.reset_index()
     char_freq_df.columns = ['character', 'frequency']
 
@@ -213,13 +221,21 @@ def plot_character_frequency_heatmap(data, output_file):
     plt.show()
 
 
+# Чтение полного датасета с помощью Dask
 full_df = dd.read_csv('generated_files/generated_dataset.csv')
 
-# Вызов функций для построения Heatmap и графика с прогресс-баром
+# Вызов функций для построения Heatmap и графика
 heatmap_output_file = 'generated_files/character_frequency_heatmap.png'
 numeric_output_file = 'generated_files/average_numeric_value_by_month.png'
+# Объединим две функции визуализации в одну для удобства
+def visualize_data():
+    plot_average_numeric_value_by_month(full_df.compute(), numeric_output_file)
+    plot_character_frequency_heatmap(full_df.compute(), heatmap_output_file)
 
-print("Построение Heatmap и графика:")
-plot_character_frequency_heatmap(full_df.compute(), heatmap_output_file)
-plot_average_numeric_value_by_month(full_df.compute(), numeric_output_file)
-print("Heatmap и график сохранены.")
+#объединим все функции в одну
+def run_all_operations():
+    process_dataset_and_save_parallel()
+    calculate_metrics_and_save()
+    calculate_metrics_and_merge()
+    calculate_confidence_interval()
+    visualize_data()
