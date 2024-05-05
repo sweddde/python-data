@@ -6,6 +6,9 @@ import seaborn as sns
 from scipy import stats
 import matplotlib.pyplot as plt
 
+
+HEATMAP_PATH = 'generated_files/character_frequency_heatmap.png'
+NUMERIC_PATH = 'generated_files/average_numeric_value_by_month.png'
 ####################################################
 #ГЕНЕРАЦИЯ ДАТАСЕТА
 ####################################################
@@ -222,20 +225,12 @@ def plot_character_frequency_heatmap(data, output_file):
 
 
 # Чтение полного датасета с помощью Dask
-full_df = dd.read_csv('generated_files/generated_dataset.csv')
+
 
 # Вызов функций для построения Heatmap и графика
-heatmap_output_file = 'generated_files/character_frequency_heatmap.png'
-numeric_output_file = 'generated_files/average_numeric_value_by_month.png'
-# Объединим две функции визуализации в одну для удобства
-def visualize_data():
-    plot_average_numeric_value_by_month(full_df.compute(), numeric_output_file)
-    plot_character_frequency_heatmap(full_df.compute(), heatmap_output_file)
 
-#объединим все функции в одну
-def run_all_operations():
-    process_dataset_and_save_parallel()
-    calculate_metrics_and_save()
-    calculate_metrics_and_merge()
-    calculate_confidence_interval()
-    visualize_data()
+# Объединим две функции визуализации в одну для удобства
+def visualize_data(full_df):
+    plot_average_numeric_value_by_month(full_df.compute(), NUMERIC_PATH)
+    plot_character_frequency_heatmap(full_df.compute(), HEATMAP_PATH)
+
