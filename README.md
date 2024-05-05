@@ -49,6 +49,7 @@ Heatmap по частотности символов в колонке string
 ![image](https://github.com/sweddde/python-data/assets/115980523/261b5d53-bf48-4296-9b81-58efb6c73d90)
 ------------------------------------
 Пример метрик
+------------------------------------
 ![image](https://github.com/sweddde/python-data/assets/115980523/57cb1d87-b4ce-4cf3-86cb-3c989ef90a6e)
 ------------------------------------
 Пример соединения
