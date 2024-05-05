@@ -116,8 +116,6 @@ def calculate_metrics_and_save():
 #FROM generated_dataset
 #GROUP BY DATE_TRUNC('hour', datetime);
 #"""
-
-# Вызов функции для расчета метрик и сохранения результатов
 ####################################################
 # ОБЪЕДИНЕНИЕ С МЕТРИКАМИ
 ####################################################
@@ -168,6 +166,7 @@ def calculate_confidence_interval_pre(input_file, output_file, hist_output_file)
     data = full_df['value']
 
     # Выбор методики расчета доверительного интервала
+    # Выбор основан на том, что данные имеют нормальное распределение
     mean = np.mean(data)
     std_err = stats.sem(data)
     z_score = stats.norm.ppf(1 - (1 - confidence_level) / 2)
@@ -222,13 +221,6 @@ def plot_character_frequency_heatmap(data, output_file):
     plt.ylabel('Character')
     plt.savefig(output_file)  # Сохранение Heatmap в файл
     plt.show()
-
-
-# Чтение полного датасета с помощью Dask
-
-
-# Вызов функций для построения Heatmap и графика
-
 # Объединим две функции визуализации в одну для удобства
 def visualize_data(full_df):
     plot_average_numeric_value_by_month(full_df.compute(), NUMERIC_PATH)
